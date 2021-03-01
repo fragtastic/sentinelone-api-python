@@ -4,7 +4,6 @@ from sentineloneapi import exceptions
 import datetime
 import requests
 import logging
-import asyncio
 import time
 
 
