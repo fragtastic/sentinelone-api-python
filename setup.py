@@ -7,7 +7,7 @@ setuptools.setup(
     name="sentinelone-api-python-fragtastic",
     version="0.0.1",
     author="fragtastic",
-    author_email="fragtastic@noreply.github.com",
+    author_email="fragtastic@users.noreply.github.com",
     description="API implementation for SentinelOne",
     long_description=long_description,
     long_description_content_type="text/markdown",
