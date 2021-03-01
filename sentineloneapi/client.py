@@ -6,6 +6,8 @@ import requests
 import logging
 import time
 
+from typing import Dict, List
+
 
 # TODO - inquire how to tell the difference between 401 unauthenticated and 401 unauthorized? They have VERY different meanings.
 # TODO - inquire how long authentication tokens last?
@@ -53,7 +55,7 @@ class Client:
         else:
             self.logger.warning('Already authenticated')
 
-    def _headers(self) -> dict:
+    def _headers(self) -> Dict:
         if self._auth_token:
             return {
                 'Authorization': f'Token {self._auth_token}',
@@ -566,7 +568,7 @@ class Client:
 
 
     @require_authentication()
-    def UserByToken(self, accountIds: list[str], groupIds: list[str], siteIds: list[str], tenant: bool):
+    def UserByToken(self, accountIds: List[str], groupIds: List[str], siteIds: List[str], tenant: bool):
         """
         Get a user by token.
         Response Messages
