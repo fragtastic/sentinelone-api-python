@@ -6,13 +6,6 @@ import re
 from typing import Dict, List
 
 
-# TODO - inquire how to tell the difference between 401 unauthenticated and 401 unauthorized? They have VERY different meanings.
-# TODO - inquire how long authentication tokens last?
-# TODO - replace uses of Exception with custom exception
-# TODO - async call queue
-# TODO - ratelimit per call. Maybe a wrapper like @ratelimit(seconds)
-
-
 class Client:
 
     def __init__(self, username=None, password=None, apitoken=None, url=None):
@@ -33,7 +26,6 @@ class Client:
     def authenticate(self):
         if not self._auth_token:
             self.logger.info('Authenticating')
-            # try:
             if self.apitoken:
                 self.logger.info('Authenticating with apittoken')
                 data, errors = self.LoginByApiToken()
@@ -46,9 +38,6 @@ class Client:
                 self.logger.critical('Unhandled authentication method')
                 raise exceptions.AuthenticationError('Unhandled authentication method.')
             self.logger.info('Authenticated')
-            # except Exception as e:
-            #     # TODO - leave exception handling up to the user?
-            #     self.logger.error(e)
         else:
             self.logger.warning('Already authenticated')
 
@@ -72,7 +61,6 @@ class Client:
             if nextCursor:
                 payload['cursor'] = nextCursor
             if method.__name__ == 'post':
-                # r = method(url=self.url + endpoint, json=kwargs['payload'], headers=self._headers())
                 r = method(url=self.url + endpoint, json=payload, headers=self._headers())
             elif method.__name__ == 'get':
                 r = method(url=self.url + endpoint, params=payload, headers=self._headers())
@@ -92,7 +80,6 @@ class Client:
             nextCursor = rj.get('pagination', {}).get('nextCursor', None)
             if not nextCursor:
                 break
-            # break
 
         return data, errors
 
@@ -102,7 +89,6 @@ class Client:
 
     def CountAgents(self, payload=None):
         endpoint = '/web/api/v2.1/agents/count'
-        # return self.get(endpoint)
         return self.api_call(requests.get, endpoint, payload)
 
     ##
@@ -312,7 +298,6 @@ class Client:
             'apiToken': self.apitoken if not apitoken else apitoken
           }
         }
-        # return self.post(endpoint, payload)
         return self.api_call(requests.post, endpoint, payload=payload)
 
     def AuthApp(self, payload=None):
@@ -548,7 +533,6 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/system/status/db'
-        # raise NotImplementedError
         return self.api_call(requests.get, endpoint, payload)
 
     def GetSystemConfig(self, payload=None):
@@ -563,7 +547,6 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/system/configuration'
-        # raise NotImplementedError
         return self.api_call(requests.get, endpoint, payload)
 
     def SetSystemConfig(self, payload=None):
