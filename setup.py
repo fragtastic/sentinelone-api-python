@@ -8,7 +8,7 @@ with open('requirements.txt', 'rt', encoding="utf-8") as f:
 
 setuptools.setup(
     name="sentinelone-api-python-fragtastic",
-    version="0.0.1",
+    version="0.0.2",
     author="fragtastic",
     author_email="fragtastic@users.noreply.github.com",
     description="API implementation for SentinelOne",
