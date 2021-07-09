@@ -1,11 +1,8 @@
-import re
-
-from sentineloneapi import exceptions
+from . import exceptions
 import datetime
 import requests
 import logging
-import time
-
+import re
 from typing import Dict, List
 
 
@@ -36,22 +33,22 @@ class Client:
     def authenticate(self):
         if not self._auth_token:
             self.logger.info('Authenticating')
-            try:
-                if self.apitoken:
-                    self.logger.info('Authenticating with apittoken')
-                    r, rj = self.LoginByApiToken()
-                    if r.status_code == 200:
-                        self.logger.info('Successful token authentication')
-                        self._auth_token = rj['data']['token']
-                    else:
-                        raise exceptions.AuthenticationError(r.reason)
+            # try:
+            if self.apitoken:
+                self.logger.info('Authenticating with apittoken')
+                data, errors = self.LoginByApiToken()
+                if not errors:
+                    self.logger.info('Successful token authentication')
+                    self._auth_token = data[0]['token']
                 else:
-                    self.logger.critical('Unhandled authentication method')
-                    raise exceptions.AuthenticationError('Unhandled authentication method.')
-                self.logger.info('Authenticated')
-            except Exception as e:
-                # TODO - leave exception handling up to the user?
-                self.logger.error(e)
+                    raise exceptions.AuthenticationError(errors)
+            else:
+                self.logger.critical('Unhandled authentication method')
+                raise exceptions.AuthenticationError('Unhandled authentication method.')
+            self.logger.info('Authenticated')
+            # except Exception as e:
+            #     # TODO - leave exception handling up to the user?
+            #     self.logger.error(e)
         else:
             self.logger.warning('Already authenticated')
 
@@ -66,106 +63,53 @@ class Client:
                 'Content-Type': 'application/json',
             }
 
-    def apitoken_valid(func):
-        def check_expiration(self, *args, **kwargs):
-            # 'createdAt': '2021-02-11T22:39:41.487954Z'
-            # 'expiresAt': '2021-08-13T13:34:04.487954Z'
-            now: datetime.datetime = datetime.datetime.now()
-            if self._apitoken_createdAt and self._apitoken_createdAt and self._apitoken_createdAt < now < self._apitoken_createdAt:
-                return func(self, *args, **kwargs)
+    def api_call(self, method, endpoint, payload=None):
+        data = []
+        errors = []
+        nextCursor = None
+        while True:
+            r, rj = None, None
+            if nextCursor:
+                payload['cursor'] = nextCursor
+            if method.__name__ == 'post':
+                # r = method(url=self.url + endpoint, json=kwargs['payload'], headers=self._headers())
+                r = method(url=self.url + endpoint, json=payload, headers=self._headers())
+            elif method.__name__ == 'get':
+                r = method(url=self.url + endpoint, params=payload, headers=self._headers())
             else:
-                raise Exception('Token expired. Reauthentication needed.')
-        return check_expiration
-
-    def authtoken_valid(func):
-        def check_expiration(self, *args, **kwargs):
-            # 'createdAt': '2021-02-11T22:39:41.487954Z'
-            # 'expiresAt': '2021-08-13T13:34:04.487954Z'
-            now: datetime.datetime = datetime.datetime.now()
-            if self._authtoken_createdAt and self._authtoken_expiresAt and self._authtoken_createdAt < now < self._authtoken_expiresAt:
-                return func(self, *args, **kwargs)
+                raise exceptions.UnhandledRequestType(method)
+            rj = r.json()
+            if isinstance(rj['data'], list):
+                data.extend(rj['data'])
             else:
-                raise Exception('Token expired. Reauthentication needed.')
-        return check_expiration
+                data.append(rj['data'])
+            errors.extend(rj.get('errors', []))
+            self.logger.debug(f'{endpoint} > {r.status_code} {r.reason}')
+            self.logger.debug(f'{endpoint} > {rj}')
+            if r.status_code != 200:
+                self.logger.warning(f"{endpoint} > {rj['errors']}")
 
-    def require_authentication(_=None):
-        def funcpass(func):
-            def check_authentication(self, *args, **kwargs):
-                if self._auth_token:
-                    return func(self, *args, **kwargs)
-                else:
-                    raise exceptions.Unauthenticated('Must be authenticated first')
-            return check_authentication
-        return funcpass
+            nextCursor = rj.get('pagination', {}).get('nextCursor', None)
+            if not nextCursor:
+                break
+            # break
 
-    def rate_limit(delay):
-        """Limits calls to once per delay seconds"""
-        def funcpass(func):
-            func.lasttime = 0
-            def check_rate_limit(self, *args, **kwargs):
-                now = time.time()
-                delta = now - func.lasttime
-                st = delay - delta
-                if st > 0:
-                    self.logger.debug(f'Applying rate limit of {st} seconds to {func}')
-                    time.sleep(st)
-                self.logger.debug('Rate limit passed')
-                func.lasttime = now
-                return func(self, *args, **kwargs)
-            return check_rate_limit
-        return funcpass
-
-    def api_call(self, method, endpoint, *args, **kwargs):
-        r, rj = None, None
-        if method.__name__ == 'post':
-            # r = method(url=self.url + endpoint, json=kwargs['payload'], headers=self._headers())
-            r = method(url=self.url + endpoint, json=kwargs.get('payload', {}), headers=self._headers())
-        elif method.__name__ == 'get':
-            r = method(url=self.url + endpoint, headers=self._headers())
-        else:
-            raise exceptions.UnhandledRequestType(method)
-        rj = r.json()
-        self.logger.debug(f'{endpoint} > {r.status_code} {r.reason}')
-        self.logger.debug(f'{endpoint} > {rj}')
-        if r.status_code != 200:
-            self.logger.warning(f"{endpoint} > {rj['errors']}")
-
-        return r, rj
-
-    def post(self, endpoint, payload):
-        r = requests.post(url=self.url + endpoint, json=payload, headers=self._headers())
-        rj = r.json()
-        self.logger.debug(f'> {r.status_code} {r.reason}')
-        self.logger.debug(f'> {rj}')
-        if r.status_code != 200:
-            self.logger.warning(rj['errors'])
-        return r, rj
-
-    def get(self, endpoint):
-        r = requests.get(self.url + endpoint, headers=self._headers())
-        rj = r.json()
-        self.logger.debug(f'> {r.status_code} {r.reason}')
-        self.logger.debug(f'> {rj}')
-        if r.status_code != 200:
-            self.logger.warning(rj['errors'])
-        return r, rj
+        return data, errors
 
     ##
     # Agents
     ##
 
-    @require_authentication()
-    def CountAgents(self):
+    def CountAgents(self, payload=None):
         endpoint = '/web/api/v2.1/agents/count'
         # return self.get(endpoint)
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
     ##
     # Alerts
     ##
 
-    @require_authentication()
-    def GetAlerts(self):
+    def GetAlerts(self, payload=None):
         """
         Get a list of alerts for a given scope
         Response Messages
@@ -175,14 +119,13 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/cloud-detection/alerts'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
     ##
     # Policies
     ##
 
-    @require_authentication()
-    def AccountPolicy(self, account_id):
+    def AccountPolicy(self, account_id, payload=None):
         """
         Get the policy for the Account given by ID. To get the ID of an Account, run "accounts". See also: Get Policy.
         Response Messages
@@ -192,10 +135,9 @@ class Client:
         :return:
         """
         endpoint = f'/web/api/v2.1/accounts/{account_id}/policy'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
-    @require_authentication()
-    def GlobalPolicy(self):
+    def GlobalPolicy(self, payload=None):
         """
         Get the Global policy. This is the default policy for your deployment. See also: Get Policy.
         Response Messages
@@ -205,10 +147,9 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/tenant/policy'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
-    @require_authentication()
-    def GroupPolicy(self, group_id):
+    def GroupPolicy(self, group_id, payload=None):
         """
         Get the policy of the Group given by ID. To get the ID of a Group, run "groups". See also: Get Policy.
         Response Messages
@@ -219,10 +160,9 @@ class Client:
         :return:
         """
         endpoint = f'/web/api/v2.1/groups/{group_id}/policy'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
-    @require_authentication()
-    def GroupPolicy(self, site_id):
+    def GroupPolicy(self, site_id, payload=None):
         """
         Get the policy of the Site given by ID. To get the ID of a Site, run "sites". See also: Get Policy.
         Response Messages
@@ -233,14 +173,13 @@ class Client:
         :return:
         """
         endpoint = f'/web/api/v2.1/sites/{site_id}/policy'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
     ##
     # RBAC
     ##
 
-    @require_authentication()
-    def GetAllRoles(self):
+    def GetAllRoles(self, payload=None):
         """
         See roles assigned to users that match the filter, a basic description of the roles, and the number of users for each role.
         Role-Based Access Control (RBAC) has predefined roles. (Currently, customized roles are not supported.), This command gives the ID of the role, which you can use in other commands.
@@ -251,10 +190,9 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/rbac/roles'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
-    @require_authentication()
-    def GetSpecificRoleDefinition(self, role_id):
+    def GetSpecificRoleDefinition(self, role_id, payload=None):
         """
         With the ID of a role (see Get All Roles) you can see the permissions of that role.
         The definition of a role can change in different scopes and SKUs. For example, an Admin role with the scope access of a Site does not have Ranger permissions, but an IT role with the scope access of an Account with a Ranger license does have permissions on Ranger.
@@ -267,14 +205,13 @@ class Client:
         :return:
         """
         endpoint = f'/web/api/v2.1/rbac/role/{role_id}'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
     ##
     # Sites
     ##
 
-    @require_authentication()
-    def GetSiteById(self, site_id):
+    def GetSiteById(self, site_id, payload=None):
         """
         Get the data of the Site of the ID. To get the ID, run "sites".
         The response shows the Site expiration date, SKU, licenses (total and active), token, Account name and ID, who and when it was created and changed, and its status.
@@ -286,10 +223,9 @@ class Client:
         :return:
         """
         endpoint = f'/web/api/v2.1/sites/{site_id}'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
-    @require_authentication()
-    def GetSites(self):
+    def GetSites(self, payload=None):
         """
         Get the Sites that match the filters.
         The response includes the IDs of Sites, which you can use in other commands.
@@ -300,15 +236,13 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/sites'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
     ##
     # Updates
     ##
 
-    @require_authentication()
-    @rate_limit(30)
-    def DownloadPackage(self, site_id, package_id):
+    def DownloadPackage(self, site_id, package_id, payload=None):
         """
         Download a package by site_id ("sites") and filename.
         Rate limit: 2 call per minute for each user token.
@@ -332,8 +266,7 @@ class Client:
 
         return r
 
-    @require_authentication()
-    def GetLatestPackages(self):
+    def GetLatestPackages(self, payload=None):
         """
         Get the Agent packages that are uploaded to your Management.
         The response shows the data of each package, including the IDs, which you can use in other commands.
@@ -344,14 +277,13 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/update/agent/packages'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
     ##
     # Users
     ##
 
-    @require_authentication()
-    def ApiTokenByUserId(self, user_id):
+    def ApiTokenByUserId(self, user_id, payload=None):
         """
         Get the details of the API token generated for a given user.
         Response Messages
@@ -363,9 +295,8 @@ class Client:
         :return:
         """
         endpoint = f'/web/api/v2.1/users/{user_id}/api-token-details'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
-    @require_authentication()
     def ApiTokenDetails(self, apitoken=None):
         """
         Get details of the API token that matches the filter.
@@ -384,8 +315,7 @@ class Client:
         # return self.post(endpoint, payload)
         return self.api_call(requests.post, endpoint, payload=payload)
 
-    @require_authentication()
-    def AuthApp(self):
+    def AuthApp(self, payload=None):
         """
         Authenticate a user with a third-party app, such as DUO or Google Authenticator, for deployments that require Two Factor Authentication.
         Response Messages
@@ -395,9 +325,9 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/users/auth/app'
-        return self.api_call(requests.post, endpoint)
+        return self.api_call(requests.post, endpoint, payload)
 
-    def AuthBySSO(self, scope_id):
+    def AuthBySSO(self, scope_id, payload=None):
         """
         Authenticate a Single Sign-On response over SAML v2 protocol.
         Response Messages
@@ -407,9 +337,9 @@ class Client:
         :return:
         """
         endpoint = f'/web/api/v2.1/users/login/sso-saml2/{scope_id}'
-        return self.api_call(requests.post, endpoint)
+        return self.api_call(requests.post, endpoint, payload)
 
-    def AuthRecoveryCode(self):
+    def AuthRecoveryCode(self, payload=None):
         """
         Authenticate a user with a recovery code.
         Response Messages
@@ -419,9 +349,8 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/users/auth/recovery-code'
-        return self.api_call(requests.post, endpoint)
+        return self.api_call(requests.post, endpoint, payload)
 
-    @require_authentication()
     def ChangePassword(self, userid: str, currentPassword: str, newPassword: str):
         """
         Change the user password.
@@ -446,6 +375,17 @@ class Client:
         }
         endpoint = '/web/api/v2.1/users/change-password'
         return self.api_call(requests.post, endpoint, payload=payload)
+
+    def ListUsers(self, payload=None):
+        """
+        Get a list of users.
+        Response Messages
+        200 - List of users retrieved successfully.
+        400 - Invalid user input received. See error details for further information.
+        401 - Unauthorized access - please sign in and retry. 
+        """
+        endpoint = '/web/api/v2.1/users'
+        return self.api_call(requests.get, endpoint, payload=payload)
 
     def Login(self):
         endpoint = '/web/api/v2.1/users/login'
@@ -480,9 +420,7 @@ class Client:
         raise NotImplementedError
         return self.api_call(requests.get, endpoint)
 
-
-    @require_authentication()
-    def Logout(self):
+    def Logout(self, payload):
         """
         Log out the authenticated user.
         Response Messages
@@ -491,10 +429,9 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/users/logout'
-        return self.api_call(requests.post, endpoint, payload=None)
+        return self.api_call(requests.post, endpoint, payload)
 
-    @require_authentication()
-    def GenerateApiToken(self):
+    def GenerateApiToken(self, payload=None):
         """
         Get the API token for the authenticated user.
         Response Messages
@@ -503,13 +440,12 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/users/generate-api-token'
-        r, rj = self.api_call(requests.post, endpoint, payload=None)
+        data, errors = self.api_call(requests.post, endpoint, payload=None)
         # apitoken MUST be set again for subsequent calls to look at token data
-        self.apitoken = rj['data']['token']
-        return r, rj
+        self.apitoken = data['data']['token']
+        return data, errors
 
-    @require_authentication()
-    def RevokeApiToken(self, userid):
+    def RevokeApiToken(self, userid, payload=None):
         """
         Revoke an API token.
         Response Messages
@@ -529,8 +465,7 @@ class Client:
         }
         return self.api_call(requests.post, endpoint, payload=payload)
 
-    @require_authentication()
-    def SendVerificationEmail(self):
+    def SendVerificationEmail(self, payload=None):
         """
         Send verification email to users that match the filter. Warning: Active users will be locked out of the Management Console until they verify their email. If your Management Console has Onboarding enabled, when you create a new user, the user gets an email invitation. If the user does not respond in time or loses the email, you can send it again. You can send the email invitation to multiple users. Your SMTP server must be correctly configured in Settings > SMTP for the Global scope. Changing the Global SMTP settings requires an Admin role with Global scope or Support.
         Response Messages
@@ -564,11 +499,9 @@ class Client:
           "data": {}
         }
         raise NotImplementedError
-        return self.api_call(requests.post, endpoint)
+        return self.api_call(requests.post, endpoint, payload)
 
-
-    @require_authentication()
-    def UserByToken(self, accountIds: List[str], groupIds: List[str], siteIds: List[str], tenant: bool):
+    def UserByToken(self, accountIds: List[str], groupIds: List[str], siteIds: List[str], tenant: bool, payload=None):
         """
         Get a user by token.
         Response Messages
@@ -583,14 +516,13 @@ class Client:
         """
         endpoint = '/web/api/v2.1/user'
         raise NotImplementedError
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
     ##
     # System
     ##
 
-    @rate_limit(2)
-    def CacheStatus(self):
+    def CacheStatus(self, payload=None):
         """
         Get an indication of the system's cache health status.
         This command returns a positive response when the cache server is up and running.
@@ -602,10 +534,9 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/system/status/cache'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
-    @rate_limit(2)
-    def DatabaseStatus(self):
+    def DatabaseStatus(self, payload=None):
         """
         Get an indication of the system's database health status.
         This command returns a positive response when the DB server is up and running.
@@ -618,10 +549,9 @@ class Client:
         """
         endpoint = '/web/api/v2.1/system/status/db'
         # raise NotImplementedError
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
-    @require_authentication()
-    def GetSystemConfig(self):
+    def GetSystemConfig(self, payload=None):
         """
         Get the configuration of your SentinelOne system.
         The response shows basic information of the deployed SKUs and licenses, 2FA, and the Management URL.
@@ -634,10 +564,9 @@ class Client:
         """
         endpoint = '/web/api/v2.1/system/configuration'
         # raise NotImplementedError
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
-    @require_authentication()
-    def SetSystemConfig(self):
+    def SetSystemConfig(self, payload=None):
         """
         Change the system configuration.
         Before you run this, see Get System Config.
@@ -651,10 +580,9 @@ class Client:
         """
         endpoint = '/web/api/v2.1/system/configuration'
         raise NotImplementedError
-        return self.api_call(requests.put, endpoint)
+        return self.api_call(requests.put, endpoint, payload)
 
-    @require_authentication()
-    def SystemInfo(self):
+    def SystemInfo(self, payload=None):
         """
         Get the Console build, version, patch, and release information.
         Response Messages
@@ -663,10 +591,9 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/system/info'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
 
-    @rate_limit(2)
-    def SystemStatus(self):
+    def SystemStatus(self, payload=None):
         """
         Get an indication of the system's health status.
         This command returns a positive response when the Management Console and API server are up and running. This command does not require authentication.
@@ -677,4 +604,4 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/system/status'
-        return self.api_call(requests.get, endpoint)
+        return self.api_call(requests.get, endpoint, payload)
