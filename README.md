@@ -1,5 +1,7 @@
 # Usage
 
+NOTE: **All API calls automatically handle pagination.**
+
 ```python
 import sentineloneapi
 
@@ -18,4 +20,11 @@ client = sentineloneapi.Client(
                 )
 
 client.authenticate()
+
+data, errors = client.CountAgents(payload={'computerName__like': 'test'})
+
+data, errors = c.ListUsers(payload={
+        'skipCount': True,
+        'query': 'Test'
+    })
 ```
