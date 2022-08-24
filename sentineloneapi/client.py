@@ -91,6 +91,66 @@ class Client:
         endpoint = '/web/api/v2.1/agents/count'
         return self.api_call(requests.get, endpoint, payload)
 
+    def MoveToSite(self, siteId, computerName, payload=None):
+        """
+        Move an Agent that matches the filter to a specified site.
+        Response Messages
+        200 - Success
+        400 - Invalid user input received. See error details for further information
+        401 - Unauthorized access - please sign in and retry
+        403 - User has insufficient permissions to perform the requested action
+        :return:
+        """
+        endpoint = '/web/api/v2.1/agents/actions/move-to-site'
+        payload = {
+            "data": {
+                "targetSiteId": siteId 
+            },
+            "filter": {
+                "computerName__like": computerName
+            }
+        }
+        return self.api_call(requests.post, endpoint, payload)
+
+    ##
+    # Groups
+    ##
+
+    def GetGroups(self, siteId, payload=None):
+        """
+        Get data of groups that match the filter.
+        Response Messages:
+        200 - Success
+        400 - Invalid user input received. See error details for further information
+        401 - Unauthorized access - please sign in and retry
+        """
+        endpoint = f'/web/api/v2.1/groups'
+        payload = {
+            "filter": {
+                "siteId": siteId
+            }
+        }
+        return self.api_call(requests.get, endpoint, payload)
+
+    def MoveToGroup(self, groupId, computerName, payload=None):
+        """
+        Move an Agent that matches the filter to a specified group in the same site.
+        Response Messages
+        204 - Success
+        400 - Invalid user input received. See error details for further information
+        401 - Unauthorized access - please sign in and retry
+        403 - Insufficient permissions
+        409 - Conflict
+        :return:
+        """
+        endpoint = f'/web/api/v2.1/groups/{groupId}/move-agents'
+        payload = {
+            "filter": {
+                "computerName__like": computerName
+            } 
+        }
+        return self.api_call(requests.put, endpoint, payload)
+
     ##
     # Alerts
     ##
@@ -588,3 +648,7 @@ class Client:
         """
         endpoint = '/web/api/v2.1/system/status'
         return self.api_call(requests.get, endpoint, payload)
+
+    """
+    Test Comment
+    """
