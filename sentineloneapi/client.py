@@ -8,11 +8,12 @@ from typing import Dict, List
 
 class Client:
 
-    def __init__(self, username=None, password=None, apitoken=None, url=None):
+    def __init__(self, username=None, password=None, apitoken=None, url=None, verify=None):
         self.logger = logging.getLogger(__name__)
         self.username: str = username
         self.password: str = password
         self.apitoken: str = apitoken
+        self.verify: str = verify # can be used to provide path to certfile for TLS verification
         if not ((username and password) or apitoken):
             raise exceptions.InvalidParameters('Either username & password or apitoken must be used.')
         if not url:
@@ -61,9 +62,9 @@ class Client:
             if nextCursor:
                 payload['cursor'] = nextCursor
             if method.__name__ == 'post':
-                r = method(url=self.url + endpoint, json=payload, headers=self._headers())
+                r = method(url=self.url + endpoint, json=payload, headers=self._headers(), verify=self.verify)
             elif method.__name__ == 'get':
-                r = method(url=self.url + endpoint, params=payload, headers=self._headers())
+                r = method(url=self.url + endpoint, params=payload, headers=self._headers(), verify=self.verify)
             else:
                 raise exceptions.UnhandledRequestType(method)
             rj = r.json()
