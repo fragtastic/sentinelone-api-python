@@ -65,6 +65,8 @@ class Client:
                 r = method(url=self.url + endpoint, json=payload, headers=self._headers(), verify=self.verify)
             elif method.__name__ == 'get':
                 r = method(url=self.url + endpoint, params=payload, headers=self._headers(), verify=self.verify)
+            elif method.__name__ == 'put':
+                r = method(url=self.url + endpoint, json=payload, headers=self._headers(), verify=self.verify)
             else:
                 raise exceptions.UnhandledRequestType(method)
             rj = r.json()
@@ -224,9 +226,10 @@ class Client:
         }
         return self.api_call(requests.get, endpoint, payload)
 
-    def MoveToGroup(self, groupId, computerName, payload=None):
+    def MoveToGroup(self, groupId, computerName=None, ids=None):
         """
         Move an Agent that matches the filter to a specified group in the same site.
+        Can either supply computerName or a list of IDs.
         Response Messages
         204 - Success
         400 - Invalid user input received. See error details for further information
@@ -236,11 +239,13 @@ class Client:
         :return:
         """
         endpoint = f'/web/api/v2.1/groups/{groupId}/move-agents'
-        payload = {
-            "filter": {
-                "computerName__like": computerName
-            }
-        }
+        if ids is not None:
+            payload = {"filter": {"ids": ",".join(ids) if isinstance(ids, list) else ids}}
+        elif computerName is not None:
+            payload = {"filter": {"computerName__like": computerName}}
+        else:
+            raise ValueError("neither computerName nor ids specified")
+
         return self.api_call(requests.put, endpoint, payload)
 
     ##
