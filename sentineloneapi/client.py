@@ -104,7 +104,7 @@ class Client:
         endpoint = '/web/api/v2.1/agents/actions/move-to-site'
         payload = {
             "data": {
-                "targetSiteId": siteId 
+                "targetSiteId": siteId
             },
             "filter": {
                 "computerName__like": computerName
@@ -147,7 +147,7 @@ class Client:
         payload = {
             "filter": {
                 "computerName__like": computerName
-            } 
+            }
         }
         return self.api_call(requests.put, endpoint, payload)
 
@@ -648,7 +648,3 @@ class Client:
         """
         endpoint = '/web/api/v2.1/system/status'
         return self.api_call(requests.get, endpoint, payload)
-
-    """
-    Test Comment
-    """
