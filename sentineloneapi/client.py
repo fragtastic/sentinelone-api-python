@@ -751,7 +751,7 @@ class Client:
     ##
     # Threats
     ##
-    def GetThreads(self, incidentStatuses=None, incidentStatusesNin=None, payload=None):
+    def GetThreats(self, incidentStatuses=None, incidentStatusesNin=None, payload=None):
         """
         Get data of threats that match the filter.
         Response Messages
