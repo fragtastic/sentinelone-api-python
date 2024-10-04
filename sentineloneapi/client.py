@@ -8,11 +8,12 @@ from typing import Dict, List
 
 class Client:
 
-    def __init__(self, username=None, password=None, apitoken=None, url=None):
+    def __init__(self, username=None, password=None, apitoken=None, url=None, verify=None):
         self.logger = logging.getLogger(__name__)
         self.username: str = username
         self.password: str = password
         self.apitoken: str = apitoken
+        self.verify: str = verify # can be used to provide path to certfile for TLS verification
         if not ((username and password) or apitoken):
             raise exceptions.InvalidParameters('Either username & password or apitoken must be used.')
         if not url:
@@ -61,9 +62,11 @@ class Client:
             if nextCursor:
                 payload['cursor'] = nextCursor
             if method.__name__ == 'post':
-                r = method(url=self.url + endpoint, json=payload, headers=self._headers())
+                r = method(url=self.url + endpoint, json=payload, headers=self._headers(), verify=self.verify)
             elif method.__name__ == 'get':
-                r = method(url=self.url + endpoint, params=payload, headers=self._headers())
+                r = method(url=self.url + endpoint, params=payload, headers=self._headers(), verify=self.verify)
+            elif method.__name__ == 'put':
+                r = method(url=self.url + endpoint, json=payload, headers=self._headers(), verify=self.verify)
             else:
                 raise exceptions.UnhandledRequestType(method)
             rj = r.json()
@@ -83,13 +86,167 @@ class Client:
 
         return data, errors
 
+
+    ##
+    # Agents Actions
+    ##
+    def DecommissionAgent(self, groupIds=None, ids=None, payload=None):
+        """
+        If a user is scheduled for time off, or a device is scheduled for maintenance, you can decommission the Agent.
+        This removes the Agent from the Management Console. When the Agent communicates with the Management again, the
+        Management recommissions it and returns it to the Console. Use this command to decommission the Agents that match the filter.
+        Response Messages
+        200 - Success
+        400 - Invalid user input received. See error details for further information.
+        401 - Unauthorized access - please sign in and retry.
+        403 - User has insufficient permissions to perform the requested action
+        :return:
+        """
+        endpoint = '/web/api/v2.1/agents/actions/decommission'
+        if payload is None:
+            payload = {"filter": {}}
+        if groupIds is not None:
+            if isinstance(groupIds, list):
+                payload["filter"]["groupIds"] = ",".join(groupIds)
+            else:
+                payload["filter"]["groupIds"] = groupIds
+        if ids is not None:
+            if isinstance(ids, list):
+                payload["filter"]["ids"] = ",".join(ids)
+            else:
+                payload["filter"]["ids"] = ids
+        return self.api_call(requests.post, endpoint, payload)
+
+
     ##
     # Agents
     ##
-
     def CountAgents(self, payload=None):
+        """
+        Get the count of Agents that match a filter. This command is useful to run
+        before you run other commands. You will be able to manage Agent maintenance better
+        if you know how many Agents will get a command that takes time (such as Update Software).
+        Response Messages
+        200 - Success
+        400 - Invalid user input received. See error details for further information.
+        401 - Unauthorized access - please sign in and retry.
+        """
         endpoint = '/web/api/v2.1/agents/count'
         return self.api_call(requests.get, endpoint, payload)
+
+    def GetAgents(self, siteIds=None, infected=None, networkStatuses=None, payload=None):
+        """
+        Get the Agents, and their data, that match the filter. This command gives the Agent ID,
+        which you can use in other commands.
+        To save the list and data to a CSV file, use "export/agents".
+        Response Messages
+        200 - Success
+        400 - Invalid user input received. See error details for further information.
+        401 - Unauthorized access - please sign in and retry.
+        """
+        endpoint = '/web/api/v2.1/agents'
+        if payload is None:
+            payload = {}
+        if siteIds is not None:
+            if isinstance(siteIds, list):
+                payload["siteIds"] = ",".join(siteIds)
+            else:
+                payload["siteIds"] = siteIds
+        if infected is not None:
+            payload["infected"] = infected
+        if networkStatuses is not None:
+            if isinstance(networkStatuses, list):
+                payload["networkStatuses"] = ",".join(networkStatuses)
+            else:
+                payload["networkStatuses"] = networkStatuses
+        return self.api_call(requests.get, endpoint, payload)
+
+    def MoveToSite(self, siteId, computerName, payload=None):
+        """
+        Move an Agent that matches the filter to a specified site.
+        Response Messages
+        200 - Success
+        400 - Invalid user input received. See error details for further information
+        401 - Unauthorized access - please sign in and retry
+        403 - User has insufficient permissions to perform the requested action
+        :return:
+        """
+        endpoint = '/web/api/v2.1/agents/actions/move-to-site'
+        payload = {
+            "data": {
+                "targetSiteId": siteId
+            },
+            "filter": {
+                "computerName__like": computerName
+            }
+        }
+        return self.api_call(requests.post, endpoint, payload)
+
+
+    ##
+    # Application Risk
+    ##
+
+    def GetCves(self, siteIds=None, payload=None):
+        """
+        Get known CVEs for applications that are installed on endpoints with Application Risk-enabled Agents.
+        Application Risk requires Complete SKU. This feature is in EA. To join the EA program, contact your SentinelOne Sales Rep.
+        Response Messages
+        200 - Success
+        400 - Invalid user input received. See error details for further information.
+        401 - Unauthorized access - please sign in and retry.
+        """
+        endpoint = '/web/api/v2.1/installed-applications/cves'
+        if payload is None:
+            payload = {}
+        if siteIds is not None:
+            if isinstance(siteIds, list):
+                payload["siteIds"] = ",".join(siteIds)
+            else:
+                payload["siteIds"] = siteIds
+        return self.api_call(requests.get, endpoint, payload)
+
+    ##
+    # Groups
+    ##
+
+    def GetGroups(self, siteId, payload=None):
+        """
+        Get data of groups that match the filter.
+        Response Messages:
+        200 - Success
+        400 - Invalid user input received. See error details for further information
+        401 - Unauthorized access - please sign in and retry
+        """
+        endpoint = f'/web/api/v2.1/groups'
+        payload = {
+            "filter": {
+                "siteId": siteId
+            }
+        }
+        return self.api_call(requests.get, endpoint, payload)
+
+    def MoveToGroup(self, groupId, computerName=None, ids=None):
+        """
+        Move an Agent that matches the filter to a specified group in the same site.
+        Can either supply computerName or a list of IDs.
+        Response Messages
+        204 - Success
+        400 - Invalid user input received. See error details for further information
+        401 - Unauthorized access - please sign in and retry
+        403 - Insufficient permissions
+        409 - Conflict
+        :return:
+        """
+        endpoint = f'/web/api/v2.1/groups/{groupId}/move-agents'
+        if ids is not None:
+            payload = {"filter": {"ids": ",".join(ids) if isinstance(ids, list) else ids}}
+        elif computerName is not None:
+            payload = {"filter": {"computerName__like": computerName}}
+        else:
+            raise ValueError("neither computerName nor ids specified")
+
+        return self.api_call(requests.put, endpoint, payload)
 
     ##
     # Alerts
@@ -587,4 +744,26 @@ class Client:
         :return:
         """
         endpoint = '/web/api/v2.1/system/status'
+        return self.api_call(requests.get, endpoint, payload)
+
+
+
+    ##
+    # Threats
+    ##
+    def GetThreads(self, incidentStatuses=None, incidentStatusesNin=None, payload=None):
+        """
+        Get data of threats that match the filter.
+        Response Messages
+        200 - Success
+        400 - Invalid user input received. See error details for further information.
+        401 - Unauthorized access - please sign in and retry.
+        """
+        endpoint = '/web/api/v2.1/threats'
+        if payload is None:
+            payload = {}
+        if incidentStatuses is not None:
+            payload["incidentStatuses"] = incidentStatuses
+        if incidentStatusesNin is not None:
+            payload["incidentStatusesNin"] = incidentStatusesNin
         return self.api_call(requests.get, endpoint, payload)
