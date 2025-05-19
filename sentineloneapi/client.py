@@ -70,10 +70,11 @@ class Client:
             else:
                 raise exceptions.UnhandledRequestType(method)
             rj = r.json()
-            if isinstance(rj['data'], list):
-                data.extend(rj['data'])
-            else:
-                data.append(rj['data'])
+            if 'data' in rj:
+                if isinstance(rj['data'], list):
+                    data.extend(rj['data'])
+                else:
+                    data.append(rj['data'])
             errors.extend(rj.get('errors', []))
             self.logger.debug(f'{endpoint} > {r.status_code} {r.reason}')
             self.logger.debug(f'{endpoint} > {rj}')
